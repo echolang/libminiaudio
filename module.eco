@@ -1,0 +1,40 @@
+/*
+ * libminiaudio - miniaudio bindings for Echo.
+ *
+ * The C library is vendored and compiled in. A consumer adds it with epm
+ * and nothing else.
+ */
+
+#[module: "libminiaudio"]
+#[version: "0.1.0"] // x-release-please-version
+#[epm::license: "MIT"]
+#[epm::description: "miniaudio bindings for Echo, C library vendored and compiled in"]
+
+#[cc: include "third_party/miniaudio"]
+#[cc: include "c"]
+#[cc: sources [
+    "third_party/miniaudio/miniaudio.c",
+    "c/engine.c",
+    "c/sound.c",
+    "c/group.c",
+    "c/pcm.c"
+]]
+
+#[if: os == darwin]
+#[cc: define { MA_NO_RUNTIME_LINKING: 1 }]
+#[link: framework "CoreFoundation"]
+#[link: framework "CoreAudio"]
+#[link: framework "AudioToolbox"]
+#[elif: os == linux]
+#[link: lib { name: "m", runtime: process }]
+#[link: lib { name: "dl", runtime: process }]
+#[link: lib { name: "pthread", runtime: process }]
+#[elif: os == windows]
+// WASAPI needs no extra .lib on the desktop path
+#[end]
+
+#[sources: "src/*.eco"]
+
+#[target: test] {
+    #[sources: "tests/*.eco"]
+}

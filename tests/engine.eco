@@ -1,0 +1,76 @@
+use std::math;
+
+test create_offline
+{
+    ma::Engine $engine = offlineEngine();
+    assert($engine->channels() == 2);
+    assert($engine->sampleRate() == 48000);
+}
+
+test volume_roundtrip
+{
+    ma::Engine $engine = offlineEngine();
+    guard $engine->setVolume(0.5f) else ($e) {
+        die("{$e}");
+    }
+    float32 $v = $engine->volume();
+    assert($v > 0.49f && $v < 0.51f);
+}
+
+test start_without_device_fails
+{
+    ma::Engine $engine = offlineEngine();
+    status<ma::Error> $r = $engine->start();
+    assert($r->failed());
+    ma::Error $e = $r->failure();
+    match ($e) {
+        ma::Error::invalidOperation => {},
+        else => { assert(false, 'expected invalidOperation'); },
+    };
+}
+
+test listener_position
+{
+    ma::Engine $engine = offlineEngine();
+    $engine->setListenerPosition(ma::Vec3(1.0f, 2.0f, 3.0f));
+    ma::Vec3 $p = $engine->listenerPosition();
+    assert($p->x > 0.9f && $p->x < 1.1f);
+    assert($p->y > 1.9f && $p->y < 2.1f);
+    assert($p->z > 2.9f && $p->z < 3.1f);
+}
+
+test read_overflow
+{
+    ma::Engine $engine = offlineEngine();
+    result<array<float32>, ma::Error> $r = $engine->read(math::MAX_UINT64);
+    assert($r->failed());
+    ma::Error $e = $r->failure();
+    match ($e) {
+        ma::Error::tooBig => {},
+        else => { assert(false, 'expected tooBig'); },
+    };
+}
+
+test read_at_end_is_ok
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    guard $sound->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $first = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert($first->count() == 2048);
+
+    array<float32> $rest = guard $engine->read(1024) else ($e) {
+        die("read at end: {$e}");
+    }
+
+    assert($rest->count() <= 2048);
+}

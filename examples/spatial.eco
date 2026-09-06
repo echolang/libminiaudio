@@ -1,0 +1,31 @@
+/*
+ * Move a sound around the listener on a circle.
+ *
+ *   cd examples && echoc run --target spatial
+ */
+
+use std::time;
+use std::math;
+
+ma::Engine $engine = guard ma::Engine::create() else ($e) {
+    die("audio: {$e}");
+}
+
+ma::Sound $sound = guard $engine->sound('resources/click.wav', ma::SoundOptions($looping: true)) else ($e) {
+    die("load: {$e}");
+}
+
+guard $sound->start() else ($e) {
+    die("start: {$e}");
+}
+
+int32 $step = 0;
+
+while ($step < 48) {
+    float64 $angle = ($step as float64) * 0.1308996938995747;
+    float32 $x = math::cos($angle) as float32;
+    float32 $z = math::sin($angle) as float32;
+    $sound->setPosition(ma::Vec3($x, 0.0f, $z));
+    time::sleep(.millis(50));
+    $step = $step + 1;
+}

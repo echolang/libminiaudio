@@ -1,0 +1,131 @@
+test load_sine
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    uint64 $len = guard $sound->length() else ($e) {
+        die("{$e}");
+    }
+
+    assert($len > 0);
+}
+
+test missing_file
+{
+    ma::Engine $engine = offlineEngine();
+    result<ma::Sound, ma::Error> $r = $engine->sound('tests/resources/no-such-file.wav');
+    assert($r->failed());
+    ma::Error $e = $r->failure();
+    match ($e) {
+        ma::Error::doesNotExist => {},
+        else => { assert(false, 'expected doesNotExist'); },
+    };
+}
+
+test looping_option
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath(), ma::SoundOptions($looping: true)) else ($e) {
+        die("{$e}");
+    }
+
+    assert($sound->looping());
+    $sound->setLooping(false);
+    assert(!$sound->looping());
+}
+
+test volume_pan_pitch
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    $sound->setVolume(0.25f);
+    $sound->setPan(-0.5f);
+    $sound->setPitch(1.5f);
+    assert($sound->volume() > 0.24f && $sound->volume() < 0.26f);
+    assert($sound->pan() < -0.4f);
+    assert($sound->pitch() > 1.4f);
+}
+
+test start_and_read
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    guard $sound->start() else ($e) {
+        die("{$e}");
+    }
+    assert($sound->isPlaying());
+
+    array<float32> $frames = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert($frames->count() == 2048);
+
+    float32 $energy = 0.0f;
+    usize $i = 0;
+
+    while ($i < $frames->count()) {
+        float32 $s = $frames[$i];
+        $energy = $energy + ($s * $s);
+        $i = $i + 1;
+    }
+
+    assert($energy > 0.0f);
+}
+
+test seek_to_start
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    guard $sound->start() else ($e) {
+        die("{$e}");
+    }
+
+    guard $sound->seek(0) else ($e) {
+        die("{$e}");
+    }
+}
+
+test group_volume
+{
+    ma::Engine $engine = offlineEngine();
+    ma::SoundGroup $group = guard $engine->group() else ($e) {
+        die("{$e}");
+    }
+
+    $group->setVolume(0.5f);
+    float32 $v = $group->volume();
+    assert($v > 0.49f && $v < 0.51f);
+
+    ma::Sound $sound = guard $engine->sound(sinePath(), group: $group) else ($e) {
+        die("{$e}");
+    }
+
+    guard $sound->start() else ($e) {
+        die("{$e}");
+    }
+    assert($sound->isPlaying());
+}
+
+test spatial_position
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    $sound->setPosition(ma::Vec3(4.0f, 0.0f, 0.0f));
+    ma::Vec3 $p = $sound->position();
+    assert($p->x > 3.9f && $p->x < 4.1f);
+}

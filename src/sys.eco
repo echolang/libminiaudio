@@ -1,0 +1,169 @@
+/**
+ * C symbols this module is built out of, in one place.
+ *
+ * A C symbol may only be declared once per module. eco_ma_* is our shim:
+ * init/uninit, option packing, vec3 unpack. ma_* is miniaudio, called
+ * directly. internal: other files in this module call these, a consumer
+ * does not.
+ */
+
+namespace ma;
+
+extern {
+    struct eco_ma_engine;
+    struct eco_ma_sound;
+    struct eco_ma_sound_group;
+    struct eco_ma_pcm;
+
+    function ma_result_description as cResultDescription(int32 $code) : ptr<const uint8>;
+
+    function eco_ma_engine_init as cEngineInit(
+        uint32 $channels,
+        uint32 $sampleRate,
+        uint32 $noAutoStart,
+        uint32 $noDevice,
+        ptr<ptr<eco_ma_engine>> $out
+    ) : int32;
+    function eco_ma_engine_uninit as cEngineUninit(ptr<eco_ma_engine> $engine) : void;
+    function eco_ma_engine_listener_get_position as cListenerPosition(
+        ptr<eco_ma_engine> $engine,
+        uint32 $index,
+        ptr<Vec3> $out
+    ) : void;
+    function eco_ma_engine_listener_get_direction as cListenerDirection(
+        ptr<eco_ma_engine> $engine,
+        uint32 $index,
+        ptr<Vec3> $out
+    ) : void;
+    function eco_ma_engine_listener_get_world_up as cListenerWorldUp(
+        ptr<eco_ma_engine> $engine,
+        uint32 $index,
+        ptr<Vec3> $out
+    ) : void;
+
+    function eco_ma_sound_init_from_file as cSoundInit(
+        ptr<eco_ma_engine> $engine,
+        ptr<const uint8> $path,
+        uint32 $stream,
+        uint32 $decode,
+        uint32 $looping,
+        uint32 $noPitch,
+        uint32 $noSpatialization,
+        ptr<eco_ma_sound_group> $group,
+        ptr<ptr<eco_ma_sound>> $out
+    ) : int32;
+    function eco_ma_sound_init_from_waveform as cSoundInitWaveform(
+        ptr<eco_ma_engine> $engine,
+        int32 $type,
+        float64 $frequency,
+        uint32 $noPitch,
+        uint32 $noSpatialization,
+        ptr<eco_ma_sound_group> $group,
+        ptr<ptr<eco_ma_sound>> $out
+    ) : int32;
+    function eco_ma_sound_uninit as cSoundUninit(ptr<eco_ma_sound> $sound) : void;
+    function eco_ma_sound_get_position as cSoundPosition(ptr<eco_ma_sound> $sound, ptr<Vec3> $out) : void;
+    function eco_ma_sound_set_frequency as cSoundSetFrequency(ptr<eco_ma_sound> $sound, float64 $hz) : int32;
+    function eco_ma_sound_get_frequency as cSoundFrequency(ptr<eco_ma_sound> $sound, ptr<float64> $out) : int32;
+    function eco_ma_sound_set_waveform as cSoundSetWaveform(ptr<eco_ma_sound> $sound, int32 $type) : int32;
+    function eco_ma_sound_get_waveform as cSoundWaveform(ptr<eco_ma_sound> $sound, ptr<int32> $out) : int32;
+    function eco_ma_sound_set_amplitude as cSoundSetAmplitude(ptr<eco_ma_sound> $sound, float64 $amp) : int32;
+    function eco_ma_sound_get_amplitude as cSoundAmplitude(ptr<eco_ma_sound> $sound, ptr<float64> $out) : int32;
+
+    function eco_ma_sound_group_init as cGroupInit(ptr<eco_ma_engine> $engine, ptr<ptr<eco_ma_sound_group>> $out) : int32;
+    function eco_ma_sound_group_uninit as cGroupUninit(ptr<eco_ma_sound_group> $group) : void;
+
+    function ma_engine_start as cEngineStart(ptr<eco_ma_engine> $engine) : int32;
+    function ma_engine_stop as cEngineStop(ptr<eco_ma_engine> $engine) : int32;
+    function ma_engine_set_volume as cEngineSetVolume(ptr<eco_ma_engine> $engine, float32 $volume) : int32;
+    function ma_engine_get_volume as cEngineVolume(ptr<eco_ma_engine> $engine) : float32;
+    function ma_engine_get_channels as cEngineChannels(ptr<eco_ma_engine> $engine) : uint32;
+    function ma_engine_get_sample_rate as cEngineSampleRate(ptr<eco_ma_engine> $engine) : uint32;
+    function ma_engine_get_time_in_pcm_frames as cEngineTime(ptr<eco_ma_engine> $engine) : uint64;
+    function ma_engine_play_sound as cEnginePlay(
+        ptr<eco_ma_engine> $engine,
+        ptr<const uint8> $path,
+        ptr<eco_ma_sound_group> $group
+    ) : int32;
+    function ma_engine_read_pcm_frames as cEngineRead(
+        ptr<eco_ma_engine> $engine,
+        ptr<float32> $out,
+        uint64 $frameCount,
+        ptr<uint64> $framesRead
+    ) : int32;
+    function ma_engine_listener_set_position as cListenerSetPosition(
+        ptr<eco_ma_engine> $engine,
+        uint32 $index,
+        float32 $x,
+        float32 $y,
+        float32 $z
+    ) : void;
+    function ma_engine_listener_set_direction as cListenerSetDirection(
+        ptr<eco_ma_engine> $engine,
+        uint32 $index,
+        float32 $x,
+        float32 $y,
+        float32 $z
+    ) : void;
+    function ma_engine_listener_set_world_up as cListenerSetWorldUp(
+        ptr<eco_ma_engine> $engine,
+        uint32 $index,
+        float32 $x,
+        float32 $y,
+        float32 $z
+    ) : void;
+
+    function ma_sound_start as cSoundStart(ptr<eco_ma_sound> $sound) : int32;
+    function ma_sound_stop as cSoundStop(ptr<eco_ma_sound> $sound) : int32;
+    function ma_sound_set_volume as cSoundSetVolume(ptr<eco_ma_sound> $sound, float32 $volume) : void;
+    function ma_sound_get_volume as cSoundVolume(ptr<eco_ma_sound> $sound) : float32;
+    function ma_sound_set_pan as cSoundSetPan(ptr<eco_ma_sound> $sound, float32 $pan) : void;
+    function ma_sound_get_pan as cSoundPan(ptr<eco_ma_sound> $sound) : float32;
+    function ma_sound_set_pitch as cSoundSetPitch(ptr<eco_ma_sound> $sound, float32 $pitch) : void;
+    function ma_sound_get_pitch as cSoundPitch(ptr<eco_ma_sound> $sound) : float32;
+    function ma_sound_set_looping as cSoundSetLooping(ptr<eco_ma_sound> $sound, uint32 $looping) : void;
+    function ma_sound_is_looping as cSoundLooping(ptr<eco_ma_sound> $sound) : uint32;
+    function ma_sound_is_playing as cSoundPlaying(ptr<eco_ma_sound> $sound) : uint32;
+    function ma_sound_at_end as cSoundAtEnd(ptr<eco_ma_sound> $sound) : uint32;
+    function ma_sound_seek_to_pcm_frame as cSoundSeek(ptr<eco_ma_sound> $sound, uint64 $frame) : int32;
+    function ma_sound_get_cursor_in_pcm_frames as cSoundCursor(ptr<eco_ma_sound> $sound, ptr<uint64> $out) : int32;
+    function ma_sound_get_length_in_pcm_frames as cSoundLength(ptr<eco_ma_sound> $sound, ptr<uint64> $out) : int32;
+    function ma_sound_set_position as cSoundSetPosition(
+        ptr<eco_ma_sound> $sound,
+        float32 $x,
+        float32 $y,
+        float32 $z
+    ) : void;
+    function ma_sound_set_spatialization_enabled as cSoundSetSpatialization(ptr<eco_ma_sound> $sound, uint32 $enabled) : void;
+    function ma_sound_is_spatialization_enabled as cSoundSpatialization(ptr<eco_ma_sound> $sound) : uint32;
+    function ma_sound_set_fade_in_pcm_frames as cSoundSetFade(
+        ptr<eco_ma_sound> $sound,
+        float32 $from,
+        float32 $to,
+        uint64 $frames
+    ) : void;
+
+    function ma_sound_group_set_volume as cGroupSetVolume(ptr<eco_ma_sound_group> $group, float32 $volume) : void;
+    function ma_sound_group_get_volume as cGroupVolume(ptr<eco_ma_sound_group> $group) : float32;
+
+    function eco_ma_pcm_init as cPcmInit(
+        ptr<eco_ma_engine> $engine,
+        uint32 $capacityFrames,
+        ptr<ptr<eco_ma_pcm>> $out
+    ) : int32;
+    function eco_ma_pcm_uninit as cPcmUninit(ptr<eco_ma_pcm> $pcm) : void;
+    function eco_ma_pcm_write as cPcmWrite(
+        ptr<eco_ma_pcm> $pcm,
+        ptr<const float32> $samples,
+        uint64 $frameCount,
+        ptr<uint64> $written
+    ) : int32;
+    function eco_ma_pcm_writable as cPcmWritable(ptr<eco_ma_pcm> $pcm) : uint64;
+    function eco_ma_pcm_start as cPcmStart(ptr<eco_ma_pcm> $pcm) : int32;
+    function eco_ma_pcm_stop as cPcmStop(ptr<eco_ma_pcm> $pcm) : int32;
+    function eco_ma_pcm_set_volume as cPcmSetVolume(ptr<eco_ma_pcm> $pcm, float32 $volume) : void;
+    function eco_ma_pcm_get_volume as cPcmVolume(ptr<eco_ma_pcm> $pcm) : float32;
+    function eco_ma_pcm_set_pan as cPcmSetPan(ptr<eco_ma_pcm> $pcm, float32 $pan) : void;
+    function eco_ma_pcm_get_pan as cPcmPan(ptr<eco_ma_pcm> $pcm) : float32;
+    function eco_ma_pcm_is_playing as cPcmPlaying(ptr<eco_ma_pcm> $pcm) : uint32;
+}

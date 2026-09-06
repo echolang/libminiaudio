@@ -1,0 +1,53 @@
+/**
+ * A mixing bus. Sounds attached to a group share its volume. Holds the
+ * Engine it was created from.
+ */
+
+namespace ma;
+
+#[atomic]
+public class SoundGroup
+{
+    private Engine $engine;
+    private ptr<eco_ma_sound_group> $raw;
+
+    private constructor(Engine $engine, ptr<eco_ma_sound_group> $raw)
+    {
+        $this->engine = $engine;
+        $this->raw = $raw;
+    }
+
+    destructor()
+    {
+        if ($this->raw != null) {
+            cGroupUninit($this->raw);
+            $this->raw:$ = null;
+        }
+    }
+
+    internal const function raw() : ptr<eco_ma_sound_group>
+    {
+        return live($this->raw, 'SoundGroup handle is null');
+    }
+
+    internal static function open(Engine $engine) : result<SoundGroup, Error>
+    {
+        ptr<eco_ma_sound_group> $raw = null;
+        int32 $code = cGroupInit($engine->raw(), &$raw);
+        ptr<eco_ma_sound_group> $p = guard takeRaw($code, $raw) else ($e) {
+            return .error($e);
+        }
+
+        return .ok(SoundGroup($engine, $p));
+    }
+
+    public function setVolume(float32 $volume) : void
+    {
+        cGroupSetVolume($this->raw(), $volume);
+    }
+
+    public const function volume() : float32
+    {
+        return cGroupVolume($this->raw());
+    }
+}

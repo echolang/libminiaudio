@@ -1,0 +1,32 @@
+/**
+ * Configs we own. miniaudio's own config structs never cross the ABI.
+ * Add a field here when we wrap a new miniaudio option; existing fields
+ * keep their defaults.
+ */
+
+namespace ma;
+
+public struct EngineConfig
+{
+    public uint32 $channels = 0;
+    public uint32 $sampleRate = 0;
+    public bool $noAutoStart = false;
+    public bool $noDevice = false;
+}
+
+public struct SoundOptions
+{
+    public bool $stream = false;
+    public bool $decode = false;
+    public bool $looping = false;
+    public bool $noPitch = false;
+    public bool $noSpatialization = false;
+}
+
+public enum Waveform : int32
+{
+    case sine = 0;
+    case square = 1;
+    case triangle = 2;
+    case sawtooth = 3;
+}

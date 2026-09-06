@@ -1,0 +1,181 @@
+internal function toneEnergy(const array<float32>& $frames) : float32
+{
+    float32 $energy = 0.0f;
+    usize $i = 0;
+
+    while ($i < $frames->count()) {
+        float32 $s = $frames[$i];
+        $energy = $energy + ($s * $s);
+        $i = $i + 1;
+    }
+
+    return $energy;
+}
+
+test tone_sine_has_energy
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $tone = guard $engine->tone(ma::Waveform::sine, 440.0) else ($e) {
+        die("{$e}");
+    }
+
+    guard $tone->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $frames = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert($frames->count() == 2048);
+    assert(toneEnergy($frames) > 0.0f);
+}
+
+test tone_set_frequency
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $tone = guard $engine->tone(ma::Waveform::sine, 220.0) else ($e) {
+        die("{$e}");
+    }
+
+    float64 $hz = guard $tone->frequency() else ($e) {
+        die("{$e}");
+    }
+
+    assert($hz > 219.0 && $hz < 221.0);
+
+    guard $tone->setFrequency(880.0) else ($e) {
+        die("{$e}");
+    }
+
+    float64 $hz2 = guard $tone->frequency() else ($e) {
+        die("{$e}");
+    }
+
+    assert($hz2 > 879.0 && $hz2 < 881.0);
+
+    guard $tone->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $frames = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert(toneEnergy($frames) > 0.0f);
+}
+
+test tone_set_waveform
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $tone = guard $engine->tone(ma::Waveform::sine, 440.0) else ($e) {
+        die("{$e}");
+    }
+
+    ma::Waveform $kind = guard $tone->waveform() else ($e) {
+        die("{$e}");
+    }
+
+    assert($kind == ma::Waveform::sine);
+
+    guard $tone->setWaveform(ma::Waveform::square) else ($e) {
+        die("{$e}");
+    }
+
+    ma::Waveform $kind2 = guard $tone->waveform() else ($e) {
+        die("{$e}");
+    }
+
+    assert($kind2 == ma::Waveform::square);
+
+    guard $tone->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $frames = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert(toneEnergy($frames) > 0.0f);
+}
+
+test tone_amplitude
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $tone = guard $engine->tone(ma::Waveform::sine, 440.0) else ($e) {
+        die("{$e}");
+    }
+
+    float64 $amp = guard $tone->amplitude() else ($e) {
+        die("{$e}");
+    }
+
+    assert($amp > 0.99 && $amp < 1.01);
+
+    guard $tone->setAmplitude(0.25) else ($e) {
+        die("{$e}");
+    }
+
+    float64 $amp2 = guard $tone->amplitude() else ($e) {
+        die("{$e}");
+    }
+
+    assert($amp2 > 0.24 && $amp2 < 0.26);
+}
+
+test tone_fade_is_the_envelope
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $tone = guard $engine->tone(ma::Waveform::sine, 440.0) else ($e) {
+        die("{$e}");
+    }
+
+    $tone->setFade(0.0f, 0.0f, 1);
+    guard $tone->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $silent = guard $engine->read(256) else ($e) {
+        die("{$e}");
+    }
+
+    assert(toneEnergy($silent) == 0.0f);
+
+    $tone->setFade(0.0f, 1.0f, 1);
+    array<float32> $frames = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert(toneEnergy($frames) > 0.0f);
+}
+
+test tone_zero_hz
+{
+    ma::Engine $engine = offlineEngine();
+    result<ma::Sound, ma::Error> $r = $engine->tone(ma::Waveform::sine, 0.0);
+    assert($r->failed());
+    ma::Error $e = $r->failure();
+    match ($e) {
+        ma::Error::invalidArgs => {},
+        else => { assert(false, 'expected invalidArgs'); },
+    };
+}
+
+test tone_methods_on_file
+{
+    ma::Engine $engine = offlineEngine();
+    ma::Sound $sound = guard $engine->sound(sinePath()) else ($e) {
+        die("{$e}");
+    }
+
+    status<ma::Error> $set = $sound->setFrequency(440.0);
+    assert($set->failed());
+    ma::Error $e = $set->failure();
+    match ($e) {
+        ma::Error::invalidOperation => {},
+        else => { assert(false, 'expected invalidOperation'); },
+    };
+
+    result<float64, ma::Error> $hz = $sound->frequency();
+    assert($hz->failed());
+}

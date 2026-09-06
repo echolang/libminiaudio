@@ -1,0 +1,14 @@
+internal function offlineEngine() : ma::Engine
+{
+    ma::EngineConfig $cfg = ma::EngineConfig($noDevice: true, $channels: 2, $sampleRate: 48000);
+    ma::Engine $engine = guard ma::Engine::create($cfg) else ($e) {
+        die("{$e}");
+    }
+
+    return $engine;
+}
+
+internal function sinePath() : string
+{
+    return 'tests/resources/sine.wav';
+}

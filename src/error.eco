@@ -1,0 +1,37 @@
+/**
+ * Why a miniaudio call did not do what you asked.
+ *
+ * An open integer enum, so `guard` / `match` is the call site. Named
+ * cases are the codes this library publishes. `other` is a newer
+ * miniaudio, or a code we do not wrap yet. `from` always succeeds;
+ * `value()` is the integer C handed us. The sentence is miniaudio's,
+ * via `message()`.
+ */
+
+namespace ma;
+
+public enum Error : int32
+{
+    case invalidArgs = -2;
+    case invalidOperation = -3;
+    case outOfMemory = -4;
+    case doesNotExist = -7;
+    case invalidFile = -10;
+    case tooBig = -11;
+    case ioError = -20;
+    case invalidData = -33;
+    case formatNotSupported = -200;
+    case deviceTypeNotSupported = -201;
+    case noBackend = -203;
+    case noDevice = -204;
+    case failedToInitBackend = -400;
+    case other;
+
+    /**
+     * What went wrong, in words. miniaudio's sentence for the result code.
+     */
+    public const function message() : string
+    {
+        return describe($this->value());
+    }
+}

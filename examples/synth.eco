@@ -1,0 +1,466 @@
+/*
+ * A keyboard on thirteen tones. The library generates the waveforms;
+ * this file is keys, fade, and a status line.
+ *
+ *   cd examples && echoc run --target synth
+ */
+
+use std::io;
+use std::math;
+use std::time;
+
+extern {
+    function eco_term_raw as cTermRaw() : int32;
+    function eco_term_restore as cTermRestore() : void;
+    function eco_term_poll as cTermPoll(ptr<int32> $key, ptr<int32> $kind) : int32;
+    function eco_term_has_keyup as cTermHasKeyup() : int32;
+}
+
+internal const float64 ATTACK_SEC = 0.008;
+internal const float64 RELEASE_SEC = 0.35;
+internal const int64 FALLBACK_RELEASE_MS = 80;
+internal const int32 VOICE_COUNT = 13;
+
+internal class RawTerm
+{
+    internal constructor()
+    {
+        if (cTermRaw() != 0) {
+            die('could not put the terminal in raw mode');
+        }
+    }
+
+    destructor()
+    {
+        cTermRestore();
+    }
+}
+
+internal class Synth
+{
+    private array<ma::Sound> $voices;
+    private array<bool> $held;
+    private array<time::instant> $last;
+    private ma::Waveform $wave;
+    private int32 $octave;
+    private float32 $volume;
+    private float32 $pan;
+    private uint64 $attackFrames;
+    private uint64 $releaseFrames;
+
+    internal constructor(ma::Engine $engine)
+    {
+        $this->wave = ma::Waveform::sine;
+        $this->octave = 4;
+        $this->volume = 0.28f;
+        $this->pan = 0.0f;
+        $this->attackFrames = framesOf(ATTACK_SEC, $engine->sampleRate());
+        $this->releaseFrames = framesOf(RELEASE_SEC, $engine->sampleRate());
+
+        time::instant $now = time::instant::now();
+        array<ma::Sound> $vs = array<ma::Sound>();
+        array<bool> $held = array<bool>();
+        array<time::instant> $last = array<time::instant>();
+        int32 $i = 0;
+
+        while ($i < VOICE_COUNT) {
+            float64 $hz = hzOf(midiOf(4, $i));
+            ma::Sound $s = guard $engine->tone(
+                ma::Waveform::sine,
+                $hz,
+                ma::SoundOptions($noSpatialization: true)
+            ) else ($e) {
+                die("tone: {$e}");
+            }
+
+            $s->setVolume($this->volume);
+            $s->setFade(0.0f, 0.0f, 1);
+
+            $vs[] = $s;
+            $held[] = false;
+            $last[] = $now;
+            $i = $i + 1;
+        }
+
+        $this->voices = $vs;
+        $this->held = $held;
+        $this->last = $last;
+    }
+
+    internal function handle(int32 $key, int32 $kind) : bool
+    {
+        if ($key == 3 || $key == 113 || $key == 81) {
+            return false;
+        }
+
+        if ($key >= 65 && $key <= 90) {
+            $key = $key + 32;
+        }
+
+        int32 $note = noteIndex($key);
+        if ($note >= 0) {
+            usize $i = $note as usize;
+            if ($kind == 3) {
+                $this->release($i);
+            } else {
+                $this->press($i);
+            }
+            return true;
+        }
+
+        if ($kind != 1) {
+            return true;
+        }
+
+        if ($key == 49) {
+            $this->setWave(ma::Waveform::sine);
+        } else if ($key == 50) {
+            $this->setWave(ma::Waveform::square);
+        } else if ($key == 51) {
+            $this->setWave(ma::Waveform::triangle);
+        } else if ($key == 52) {
+            $this->setWave(ma::Waveform::sawtooth);
+        } else if ($key == 122) {
+            if ($this->octave > 1) {
+                $this->octave = $this->octave - 1;
+                $this->retune();
+            }
+        } else if ($key == 120) {
+            if ($this->octave < 7) {
+                $this->octave = $this->octave + 1;
+                $this->retune();
+            }
+        } else if ($key == 45) {
+            $this->volume = $this->volume - 0.05f;
+            if ($this->volume < 0.05f) {
+                $this->volume = 0.05f;
+            }
+            $this->applyVolume();
+        } else if ($key == 61 || $key == 43) {
+            $this->volume = $this->volume + 0.05f;
+            if ($this->volume > 1.0f) {
+                $this->volume = 1.0f;
+            }
+            $this->applyVolume();
+        } else if ($key == 91) {
+            $this->pan = $this->pan - 0.25f;
+            if ($this->pan < -1.0f) {
+                $this->pan = -1.0f;
+            }
+            $this->applyPan();
+        } else if ($key == 93) {
+            $this->pan = $this->pan + 0.25f;
+            if ($this->pan > 1.0f) {
+                $this->pan = 1.0f;
+            }
+            $this->applyPan();
+        } else if ($key == 32) {
+            $this->releaseAll();
+        }
+
+        return true;
+    }
+
+    internal function expire() : bool
+    {
+        if (cTermHasKeyup() != 0) {
+            return false;
+        }
+
+        time::instant $now = time::instant::now();
+        bool $changed = false;
+        usize $i = 0;
+
+        while ($i < $this->held->count()) {
+            if ($this->held[$i]) {
+                int64 $ms = $now->since($this->last[$i])->as_millis();
+                if ($ms > FALLBACK_RELEASE_MS) {
+                    $this->release($i);
+                    $changed = true;
+                }
+            }
+            $i = $i + 1;
+        }
+
+        return $changed;
+    }
+
+    internal function hud() : string
+    {
+        string $shape = waveName($this->wave);
+        string $notes = sounding($this);
+        int32 $oct = $this->octave;
+        float32 $vol = $this->volume;
+        float32 $pan = $this->pan;
+        return str::rpad("{$shape}  oct={$oct}  vol={$vol:.2f}  pan={$pan:.2f}  notes={$notes}", 72 as usize, 32);
+    }
+
+    internal const function isHeld(usize $i) : bool
+    {
+        return $this->held[$i];
+    }
+
+    private function press(usize $i) : void
+    {
+        if (!$this->held[$i]) {
+            $this->voices[$i]->setVolume($this->volume);
+            if ($this->voices[$i]->isPlaying()) {
+                $this->voices[$i]->setFade(-1.0f, 1.0f, $this->attackFrames);
+            } else {
+                $this->voices[$i]->setFade(0.0f, 1.0f, $this->attackFrames);
+                guard $this->voices[$i]->start() else ($e) {
+                    die("{$e}");
+                }
+            }
+        }
+        $this->held[$i] = true;
+        $this->last[$i] = time::instant::now();
+    }
+
+    private function release(usize $i) : void
+    {
+        $this->held[$i] = false;
+        $this->voices[$i]->setFade(-1.0f, 0.0f, $this->releaseFrames);
+    }
+
+    private function releaseAll() : void
+    {
+        usize $i = 0;
+        while ($i < $this->held->count()) {
+            if ($this->held[$i]) {
+                $this->release($i);
+            }
+            $i = $i + 1;
+        }
+    }
+
+    private function setWave(ma::Waveform $kind) : void
+    {
+        $this->wave = $kind;
+        usize $i = 0;
+        while ($i < $this->voices->count()) {
+            guard $this->voices[$i]->setWaveform($kind) else ($e) {
+                die("{$e}");
+            }
+            $i = $i + 1;
+        }
+    }
+
+    private function retune() : void
+    {
+        usize $i = 0;
+        while ($i < $this->voices->count()) {
+            float64 $hz = hzOf(midiOf($this->octave, $i as int32));
+            guard $this->voices[$i]->setFrequency($hz) else ($e) {
+                die("{$e}");
+            }
+            $i = $i + 1;
+        }
+    }
+
+    private function applyVolume() : void
+    {
+        usize $i = 0;
+        while ($i < $this->held->count()) {
+            if ($this->held[$i]) {
+                $this->voices[$i]->setVolume($this->volume);
+            }
+            $i = $i + 1;
+        }
+    }
+
+    private function applyPan() : void
+    {
+        usize $i = 0;
+        while ($i < $this->voices->count()) {
+            $this->voices[$i]->setPan($this->pan);
+            $i = $i + 1;
+        }
+    }
+}
+
+internal function framesOf(float64 $sec, uint32 $rate) : uint64
+{
+    uint64 $n = ($sec * ($rate as float64)) as uint64;
+    if ($n == 0) {
+        return 1;
+    }
+    return $n;
+}
+
+internal function midiOf(int32 $octave, int32 $degree) : int32
+{
+    return ($octave + 1) * 12 + $degree;
+}
+
+internal function hzOf(int32 $midi) : float64
+{
+    float64 $semis = ($midi - 69) as float64;
+    return 440.0 * math::pow(2.0, $semis / 12.0);
+}
+
+internal function waveName(ma::Waveform $kind) : string
+{
+    return match ($kind) {
+        ma::Waveform::sine => 'sine',
+        ma::Waveform::square => 'square',
+        ma::Waveform::triangle => 'triangle',
+        ma::Waveform::sawtooth => 'saw',
+    };
+}
+
+internal function sounding(const Synth& $synth) : string
+{
+    string $out = '';
+    usize $i = 0;
+
+    while ($i < 13) {
+        if ($synth->isHeld($i)) {
+            if ($out->size() > 0) {
+                $out->append(' ');
+            }
+            $out->append(noteName($i as int32));
+        }
+        $i = $i + 1;
+    }
+
+    if ($out->empty()) {
+        return '-';
+    }
+
+    return $out;
+}
+
+internal function noteName(int32 $degree) : string
+{
+    if ($degree == 0 || $degree == 12) {
+        return 'c';
+    }
+    if ($degree == 1) {
+        return 'c#';
+    }
+    if ($degree == 2) {
+        return 'd';
+    }
+    if ($degree == 3) {
+        return 'd#';
+    }
+    if ($degree == 4) {
+        return 'e';
+    }
+    if ($degree == 5) {
+        return 'f';
+    }
+    if ($degree == 6) {
+        return 'f#';
+    }
+    if ($degree == 7) {
+        return 'g';
+    }
+    if ($degree == 8) {
+        return 'g#';
+    }
+    if ($degree == 9) {
+        return 'a';
+    }
+    if ($degree == 10) {
+        return 'a#';
+    }
+    return 'b';
+}
+
+internal function noteIndex(int32 $key) : int32
+{
+    if ($key == 97) {
+        return 0;
+    }
+    if ($key == 119) {
+        return 1;
+    }
+    if ($key == 115) {
+        return 2;
+    }
+    if ($key == 101) {
+        return 3;
+    }
+    if ($key == 100) {
+        return 4;
+    }
+    if ($key == 102) {
+        return 5;
+    }
+    if ($key == 116) {
+        return 6;
+    }
+    if ($key == 103) {
+        return 7;
+    }
+    if ($key == 121) {
+        return 8;
+    }
+    if ($key == 104) {
+        return 9;
+    }
+    if ($key == 117) {
+        return 10;
+    }
+    if ($key == 106) {
+        return 11;
+    }
+    if ($key == 107) {
+        return 12;
+    }
+    return -1;
+}
+
+if (!io::stdin->isatty()) {
+    die('synth needs a terminal');
+}
+
+ma::Engine $engine = guard ma::Engine::create() else ($e) {
+    die("audio: {$e}");
+}
+
+RawTerm $term = RawTerm();
+Synth $synth = Synth($engine);
+
+echo 'libminiaudio synth';
+echo '';
+echo '  w e   t y u         sharps';
+echo 'a s d f g h j k       c major (a = c)';
+echo '';
+echo 'hold a note, release to fade';
+echo '1-4  sine square triangle saw';
+echo 'z x  octave     - =  volume     [ ]  pan';
+echo 'spc  all off    q    quit';
+echo '';
+
+io::print("\r{$synth->hud()}");
+
+bool $run = true;
+
+while ($run) {
+    int32 $key = 0;
+    int32 $kind = 0;
+    bool $dirty = false;
+
+    while (cTermPoll(&$key, &$kind) != 0) {
+        $run = $synth->handle($key, $kind);
+        $dirty = true;
+        if (!$run) {
+            break;
+        }
+    }
+
+    if ($synth->expire()) {
+        $dirty = true;
+    }
+
+    if ($dirty) {
+        io::print("\r{$synth->hud()}");
+    }
+
+    time::sleep(.millis(2));
+}
+
+io::print("\n");

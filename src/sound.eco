@@ -1,0 +1,250 @@
+/**
+ * One instance of a playing (or stopped) sound: a file, or a tone.
+ * Holds the Engine it was created from, and the group if it has one,
+ * so neither can die first. Stop does not rewind; `seek(0)` does.
+ */
+
+namespace ma;
+
+#[atomic]
+public class Sound
+{
+    private Engine $engine;
+    private SoundGroup? $group;
+    private ptr<eco_ma_sound> $raw;
+
+    private constructor(Engine $engine, SoundGroup? $group, ptr<eco_ma_sound> $raw)
+    {
+        $this->engine = $engine;
+        $this->group = $group;
+        $this->raw = $raw;
+    }
+
+    destructor()
+    {
+        if ($this->raw != null) {
+            cSoundUninit($this->raw);
+            $this->raw:$ = null;
+        }
+    }
+
+    internal const function raw() : ptr<eco_ma_sound>
+    {
+        return live($this->raw, 'Sound handle is null');
+    }
+
+    internal static function open(
+        Engine $engine,
+        const string& $path,
+        SoundOptions $options,
+        SoundGroup? $group
+    ) : result<Sound, Error>
+    {
+        ptr<eco_ma_sound> $raw = null;
+        int32 $code = cSoundInit(
+            $engine->raw(),
+            $path->cstr(),
+            $options->stream,
+            $options->decode,
+            $options->looping,
+            $options->noPitch,
+            $options->noSpatialization,
+            $group?->raw() ?? null,
+            &$raw
+        );
+        ptr<eco_ma_sound> $p = guard takeRaw($code, $raw) else ($e) {
+            return .error($e);
+        }
+
+        return .ok(Sound($engine, $group, $p));
+    }
+
+    internal static function openTone(
+        Engine $engine,
+        Waveform $kind,
+        float64 $hz,
+        SoundOptions $options,
+        SoundGroup? $group
+    ) : result<Sound, Error>
+    {
+        if ($hz <= 0.0) {
+            return .error(.invalidArgs);
+        }
+
+        ptr<eco_ma_sound> $raw = null;
+        int32 $code = cSoundInitWaveform(
+            $engine->raw(),
+            $kind->value(),
+            $hz,
+            $options->noPitch,
+            $options->noSpatialization,
+            $group?->raw() ?? null,
+            &$raw
+        );
+        ptr<eco_ma_sound> $p = guard takeRaw($code, $raw) else ($e) {
+            return .error($e);
+        }
+
+        return .ok(Sound($engine, $group, $p));
+    }
+
+    public function start() : status<Error>
+    {
+        return okOr(cSoundStart($this->raw()));
+    }
+
+    public function stop() : status<Error>
+    {
+        return okOr(cSoundStop($this->raw()));
+    }
+
+    public function setVolume(float32 $volume) : void
+    {
+        cSoundSetVolume($this->raw(), $volume);
+    }
+
+    public const function volume() : float32
+    {
+        return cSoundVolume($this->raw());
+    }
+
+    public function setPan(float32 $pan) : void
+    {
+        cSoundSetPan($this->raw(), $pan);
+    }
+
+    public const function pan() : float32
+    {
+        return cSoundPan($this->raw());
+    }
+
+    public function setPitch(float32 $pitch) : void
+    {
+        cSoundSetPitch($this->raw(), $pitch);
+    }
+
+    public const function pitch() : float32
+    {
+        return cSoundPitch($this->raw());
+    }
+
+    public function setLooping(bool $looping) : void
+    {
+        cSoundSetLooping($this->raw(), $looping);
+    }
+
+    public const function looping() : bool
+    {
+        return cSoundLooping($this->raw());
+    }
+
+    public const function isPlaying() : bool
+    {
+        return cSoundPlaying($this->raw());
+    }
+
+    public const function atEnd() : bool
+    {
+        return cSoundAtEnd($this->raw());
+    }
+
+    public function seek(uint64 $frame) : status<Error>
+    {
+        return okOr(cSoundSeek($this->raw(), $frame));
+    }
+
+    public function cursor() : result<uint64, Error>
+    {
+        uint64 $n = 0;
+        int32 $code = cSoundCursor($this->raw(), &$n);
+        return takeU64($code, $n);
+    }
+
+    public function length() : result<uint64, Error>
+    {
+        uint64 $n = 0;
+        int32 $code = cSoundLength($this->raw(), &$n);
+        return takeU64($code, $n);
+    }
+
+    public function setPosition(Vec3 $position) : void
+    {
+        cSoundSetPosition($this->raw(), $position->x, $position->y, $position->z);
+    }
+
+    public const function position() : Vec3
+    {
+        Vec3 $p = Vec3();
+        cSoundPosition($this->raw(), &$p);
+        return $p;
+    }
+
+    public function setSpatializationEnabled(bool $enabled) : void
+    {
+        cSoundSetSpatialization($this->raw(), $enabled);
+    }
+
+    public const function spatializationEnabled() : bool
+    {
+        return cSoundSpatialization($this->raw());
+    }
+
+    public function setFade(float32 $from, float32 $to, uint64 $frames) : void
+    {
+        cSoundSetFade($this->raw(), $from, $to, $frames);
+    }
+
+    /**
+     * Hz. Tones only; a file sound is `invalidOperation`.
+     */
+    public function setFrequency(float64 $hz) : status<Error>
+    {
+        if ($hz <= 0.0) {
+            return .error(.invalidArgs);
+        }
+
+        return okOr(cSoundSetFrequency($this->raw(), $hz));
+    }
+
+    public const function frequency() : result<float64, Error>
+    {
+        float64 $hz = 0.0;
+        int32 $code = cSoundFrequency($this->raw(), &$hz);
+        return takeF64($code, $hz);
+    }
+
+    public function setWaveform(Waveform $kind) : status<Error>
+    {
+        return okOr(cSoundSetWaveform($this->raw(), $kind->value()));
+    }
+
+    public const function waveform() : result<Waveform, Error>
+    {
+        int32 $n = 0;
+        int32 $code = cSoundWaveform($this->raw(), &$n);
+        if ($code != 0) {
+            return .error(Error::from($code));
+        }
+
+        Waveform $kind = guard Waveform::from($n) else {
+            return .error(.invalidOperation);
+        }
+
+        return .ok($kind);
+    }
+
+    /**
+     * Generator gain, not the sound's volume. Tones only.
+     */
+    public function setAmplitude(float64 $amplitude) : status<Error>
+    {
+        return okOr(cSoundSetAmplitude($this->raw(), $amplitude));
+    }
+
+    public const function amplitude() : result<float64, Error>
+    {
+        float64 $amp = 0.0;
+        int32 $code = cSoundAmplitude($this->raw(), &$amp);
+        return takeF64($code, $amp);
+    }
+}

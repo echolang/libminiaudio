@@ -1,0 +1,42 @@
+test from_maps_known_codes
+{
+    ma::Error $args = ma::Error::from(-2);
+    assert($args->value() == -2);
+    assert($args->message() == 'Invalid argument');
+    match ($args) {
+        ma::Error::invalidArgs => {},
+        else => { assert(false, 'expected invalidArgs'); },
+    };
+}
+
+test from_unknown_is_other
+{
+    ma::Error $e = ma::Error::from(-999);
+    assert($e->value() == -999);
+    string $s = "{$e}";
+    assert(!$s->empty());
+    string $arm = match ($e) {
+        ma::Error::invalidArgs => 'named',
+        ma::Error::invalidOperation => 'named',
+        ma::Error::outOfMemory => 'named',
+        ma::Error::doesNotExist => 'named',
+        ma::Error::invalidFile => 'named',
+        ma::Error::tooBig => 'named',
+        ma::Error::ioError => 'named',
+        ma::Error::invalidData => 'named',
+        ma::Error::formatNotSupported => 'named',
+        ma::Error::deviceTypeNotSupported => 'named',
+        ma::Error::noBackend => 'named',
+        ma::Error::noDevice => 'named',
+        ma::Error::failedToInitBackend => 'named',
+        ma::Error::other => 'other',
+    };
+    assert($arm == 'other');
+}
+
+test interpolates
+{
+    ma::Error $e = ma::Error::from(-10);
+    string $s = "failed: {$e}";
+    assert($s->size() > 8);
+}

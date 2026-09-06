@@ -1,0 +1,125 @@
+/**
+ * A push pipe into the engine graph. You write interleaved f32 from
+ * your thread; the mixer reads it. One writer. The audio thread is
+ * the reader. An empty ring is silence, not an error.
+ */
+
+namespace ma;
+
+#[atomic]
+public class PcmStream
+{
+    private Engine $engine;
+    private ptr<eco_ma_pcm> $raw;
+
+    private constructor(Engine $engine, ptr<eco_ma_pcm> $raw)
+    {
+        $this->engine = $engine;
+        $this->raw = $raw;
+    }
+
+    destructor()
+    {
+        if ($this->raw != null) {
+            cPcmUninit($this->raw);
+            $this->raw:$ = null;
+        }
+    }
+
+    internal const function raw() : ptr<eco_ma_pcm>
+    {
+        return live($this->raw, 'PcmStream handle is null');
+    }
+
+    internal static function open(Engine $engine, uint32 $capacityFrames) : result<PcmStream, Error>
+    {
+        if ($capacityFrames == 0) {
+            return .error(.invalidArgs);
+        }
+
+        ptr<eco_ma_pcm> $raw = null;
+        int32 $code = cPcmInit($engine->raw(), $capacityFrames, &$raw);
+        ptr<eco_ma_pcm> $p = guard takeRaw($code, $raw) else ($e) {
+            return .error($e);
+        }
+
+        return .ok(PcmStream($engine, $p));
+    }
+
+    /**
+     * Interleaved f32, `channels()` samples per frame. Returns how
+     * many frames landed in the ring. Short writes are normal when
+     * the ring is wrapping or nearly full.
+     */
+    public function write(const array<float32>& $interleaved) : result<uint64, Error>
+    {
+        usize $n = $interleaved->count();
+        if ($n == 0) {
+            return .ok(0);
+        }
+
+        uint32 $ch = $this->engine->channels();
+        if ($ch == 0) {
+            return .error(.invalidOperation);
+        }
+
+        usize $chN = $ch as usize;
+        if ($n % $chN != 0) {
+            return .error(.invalidArgs);
+        }
+
+        uint64 $frames = ($n / $chN) as uint64;
+        ptr<const float32> $p = $interleaved->data();
+        if ($p:$ == null) {
+            return .error(.invalidArgs);
+        }
+
+        uint64 $got = 0;
+        int32 $code = cPcmWrite($this->raw(), $p, $frames, &$got);
+        if ($code != 0) {
+            return .error(Error::from($code));
+        }
+
+        return .ok($got);
+    }
+
+    public const function writable() : uint64
+    {
+        return cPcmWritable($this->raw());
+    }
+
+    public function start() : status<Error>
+    {
+        return okOr(cPcmStart($this->raw()));
+    }
+
+    public function stop() : status<Error>
+    {
+        return okOr(cPcmStop($this->raw()));
+    }
+
+    public const function isPlaying() : bool
+    {
+        return cPcmPlaying($this->raw());
+    }
+
+    public function setVolume(float32 $volume) : void
+    {
+        cPcmSetVolume($this->raw(), $volume);
+    }
+
+    public const function volume() : float32
+    {
+        return cPcmVolume($this->raw());
+    }
+
+    public function setPan(float32 $pan) : void
+    {
+        cPcmSetPan($this->raw(), $pan);
+    }
+
+    public const function pan() : float32
+    {
+        return cPcmPan($this->raw());
+    }
+}

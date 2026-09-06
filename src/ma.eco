@@ -1,0 +1,68 @@
+/**
+ * libminiaudio. miniaudio bindings. The C library is vendored; Echo talks
+ * to a small ABI of heap pointers, never to miniaudio's own structs.
+ */
+
+namespace ma;
+
+internal const int32 AT_END = -17; // MA_AT_END; read() treats it as a short buffer, not an error
+
+internal function live<T>(ptr<T> $p, string $what) : ptr<T>
+{
+    if ($p == null) {
+        die("ma: {$what}");
+    }
+
+    return $p;
+}
+
+internal function describe(int32 $code) : string
+{
+    ptr<const uint8> $p = cResultDescription($code);
+
+    if ($p:$ == null) {
+        return '';
+    }
+
+    return str::from($p:$);
+}
+
+internal function okOr(int32 $code) : status<Error>
+{
+    if ($code == 0) {
+        return .ok;
+    }
+
+    return .error(Error::from($code));
+}
+
+internal function takeRaw<T>(int32 $code, ptr<T> $raw) : result<ptr<T>, Error>
+{
+    if ($code != 0) {
+        return .error(Error::from($code));
+    }
+
+    if ($raw == null) {
+        return .error(.outOfMemory);
+    }
+
+    return .ok($raw);
+}
+
+internal function takeU64(int32 $code, uint64 $n) : result<uint64, Error>
+{
+    if ($code != 0) {
+        return .error(Error::from($code));
+    }
+
+    return .ok($n);
+}
+
+internal function takeF64(int32 $code, float64 $n) : result<float64, Error>
+{
+    if ($code != 0) {
+        return .error(Error::from($code));
+    }
+
+    return .ok($n);
+}

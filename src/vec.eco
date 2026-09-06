@@ -1,0 +1,13 @@
+/**
+ * A point or direction in the engine's world. OpenGL coordinates: +X
+ * right, +Y up, -Z forward. No dependency on any math library.
+ */
+
+namespace ma;
+
+public struct Vec3
+{
+    public float32 $x = 0.0f;
+    public float32 $y = 0.0f;
+    public float32 $z = 0.0f;
+}

@@ -1,0 +1,10 @@
+#[module: "libminiaudio-examples"]
+#[depends: ".."]
+#[sources: ["play.eco", "spatial.eco"]]
+
+#[target: exe { name: "play", entry: "play.eco" }]
+#[target: exe { name: "spatial", entry: "spatial.eco" }]
+#[target: exe { name: "synth", entry: "synth.eco" }] {
+    #[sources: "synth.eco"]
+    #[cc: sources "term.c"]
+}

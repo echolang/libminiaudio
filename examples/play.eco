@@ -1,0 +1,32 @@
+/*
+ * Play a file through the default device.
+ *
+ *   cd examples && echoc run --target play -- resources/click.wav
+ */
+
+use std::env;
+use std::time;
+
+array<string> $argv = env::argv();
+
+if ($argv->count() < 2 as usize) {
+    die('usage: play <path>');
+}
+
+string $path = $argv[1];
+
+ma::Engine $engine = guard ma::Engine::create() else ($e) {
+    die("audio: {$e}");
+}
+
+ma::Sound $sound = guard $engine->sound($path) else ($e) {
+    die("load: {$e}");
+}
+
+guard $sound->start() else ($e) {
+    die("start: {$e}");
+}
+
+while ($sound->isPlaying()) {
+    time::sleep(.millis(20));
+}

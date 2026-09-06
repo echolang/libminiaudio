@@ -1,0 +1,120 @@
+use std::math;
+
+internal function sineFrames(uint32 $channels, uint64 $frameCount, uint32 $sampleRate) : array<float32>
+{
+    uint64 $ch = $channels as uint64;
+    usize $n = ($frameCount * $ch) as usize;
+    array<float32> $out = array<float32>();
+    $out->reserve($n);
+
+    float64 $step = 440.0 / ($sampleRate as float64);
+    float64 $phase = 0.0;
+    uint64 $f = 0;
+
+    while ($f < $frameCount) {
+        float32 $s = math::sin($phase * math::TAU) as float32;
+        uint32 $c = 0;
+
+        while ($c < $channels) {
+            $out[] = $s;
+            $c = $c + 1;
+        }
+
+        $phase = $phase + $step;
+        if ($phase >= 1.0) {
+            $phase = $phase - 1.0;
+        }
+
+        $f = $f + 1;
+    }
+
+    return $out;
+}
+
+internal function energyOf(const array<float32>& $frames) : float32
+{
+    float32 $energy = 0.0f;
+    usize $i = 0;
+
+    while ($i < $frames->count()) {
+        float32 $s = $frames[$i];
+        $energy = $energy + ($s * $s);
+        $i = $i + 1;
+    }
+
+    return $energy;
+}
+
+test pcm_write_and_read
+{
+    ma::Engine $engine = offlineEngine();
+    ma::PcmStream $out = guard $engine->pcm() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $buf = sineFrames($engine->channels(), 2048, $engine->sampleRate());
+    uint64 $wrote = guard $out->write($buf) else ($e) {
+        die("{$e}");
+    }
+
+    assert($wrote == 2048);
+
+    guard $out->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $frames = guard $engine->read(1024) else ($e) {
+        die("{$e}");
+    }
+
+    assert($frames->count() == 2048);
+    assert(energyOf($frames) > 0.0f);
+}
+
+test pcm_underrun_is_silence
+{
+    ma::Engine $engine = offlineEngine();
+    ma::PcmStream $out = guard $engine->pcm() else ($e) {
+        die("{$e}");
+    }
+
+    guard $out->start() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $frames = guard $engine->read(256) else ($e) {
+        die("{$e}");
+    }
+
+    assert($frames->count() == 512);
+    assert(energyOf($frames) == 0.0f);
+}
+
+test pcm_write_rejects_ragged
+{
+    ma::Engine $engine = offlineEngine();
+    ma::PcmStream $out = guard $engine->pcm() else ($e) {
+        die("{$e}");
+    }
+
+    array<float32> $odd = [0.0f, 1.0f, 0.0f];
+    result<uint64, ma::Error> $r = $out->write($odd);
+    assert($r->failed());
+    ma::Error $e = $r->failure();
+    match ($e) {
+        ma::Error::invalidArgs => {},
+        else => { assert(false, 'expected invalidArgs'); },
+    };
+}
+
+test pcm_capacity_zero
+{
+    ma::Engine $engine = offlineEngine();
+    result<ma::PcmStream, ma::Error> $r = $engine->pcm(0);
+    assert($r->failed());
+    ma::Error $e = $r->failure();
+    match ($e) {
+        ma::Error::invalidArgs => {},
+        else => { assert(false, 'expected invalidArgs'); },
+    };
+}

@@ -1,0 +1,222 @@
+/**
+ * The high-level mixer. Owns the playback device (unless `noDevice`),
+ * the resource manager, and the node graph. Sounds keep an Engine
+ * handle so the engine cannot die first.
+ */
+
+namespace ma;
+
+use std::math;
+
+#[atomic]
+public class Engine
+{
+    private ptr<eco_ma_engine> $raw;
+
+    private constructor(ptr<eco_ma_engine> $raw)
+    {
+        $this->raw = $raw;
+    }
+
+    destructor()
+    {
+        if ($this->raw != null) {
+            cEngineUninit($this->raw);
+            $this->raw:$ = null;
+        }
+    }
+
+    internal const function raw() : ptr<eco_ma_engine>
+    {
+        return live($this->raw, 'Engine handle is null');
+    }
+
+    /**
+     * Default device, auto-start. Pass a config to pick channels,
+     * sample rate, or `noDevice`.
+     */
+    public static function create(EngineConfig $config = EngineConfig()) : result<Engine, Error>
+    {
+        ptr<eco_ma_engine> $raw = null;
+        int32 $code = cEngineInit(
+            $config->channels,
+            $config->sampleRate,
+            $config->noAutoStart,
+            $config->noDevice,
+            &$raw
+        );
+        ptr<eco_ma_engine> $p = guard takeRaw($code, $raw) else ($e) {
+            return .error($e);
+        }
+
+        return .ok(Engine($p));
+    }
+
+    public function start() : status<Error>
+    {
+        return okOr(cEngineStart($this->raw()));
+    }
+
+    public function stop() : status<Error>
+    {
+        return okOr(cEngineStop($this->raw()));
+    }
+
+    public function setVolume(float32 $volume) : status<Error>
+    {
+        return okOr(cEngineSetVolume($this->raw(), $volume));
+    }
+
+    public const function volume() : float32
+    {
+        return cEngineVolume($this->raw());
+    }
+
+    public const function channels() : uint32
+    {
+        return cEngineChannels($this->raw());
+    }
+
+    public const function sampleRate() : uint32
+    {
+        return cEngineSampleRate($this->raw());
+    }
+
+    /**
+     * Global time in PCM frames.
+     */
+    public const function time() : uint64
+    {
+        return cEngineTime($this->raw());
+    }
+
+    public function sound(
+        const string& $path,
+        SoundOptions $options = SoundOptions(),
+        group: SoundGroup? $group = null
+    ) : result<Sound, Error>
+    {
+        return Sound::open($this, $path, $options, $group);
+    }
+
+    /**
+     * A looping oscillator in the graph. Same `Sound` as a file:
+     * start, volume, pan, fade. Frequency is Hz.
+     */
+    public function tone(
+        Waveform $kind,
+        float64 $hz,
+        SoundOptions $options = SoundOptions(),
+        group: SoundGroup? $group = null
+    ) : result<Sound, Error>
+    {
+        return Sound::openTone($this, $kind, $hz, $options, $group);
+    }
+
+    /**
+     * Fire and forget. The engine recycles the sound when it ends.
+     * Attach to a group with `sound(..., group:)` so the group is kept
+     * alive for the lifetime of the handle.
+     */
+    public function play(const string& $path) : status<Error>
+    {
+        return okOr(cEnginePlay($this->raw(), $path->cstr(), null));
+    }
+
+    public function group() : result<SoundGroup, Error>
+    {
+        return SoundGroup::open($this);
+    }
+
+    /**
+     * A ring you write interleaved f32 into. The engine reads it.
+     * Default capacity is 4096 frames, about 85 ms at 48 kHz.
+     */
+    public function pcm(uint32 $capacityFrames = 4096) : result<PcmStream, Error>
+    {
+        return PcmStream::open($this, $capacityFrames);
+    }
+
+    public function setListenerPosition(Vec3 $position) : void
+    {
+        cListenerSetPosition($this->raw(), 0, $position->x, $position->y, $position->z);
+    }
+
+    public const function listenerPosition() : Vec3
+    {
+        Vec3 $p = Vec3();
+        cListenerPosition($this->raw(), 0, &$p);
+        return $p;
+    }
+
+    public function setListenerDirection(Vec3 $direction) : void
+    {
+        cListenerSetDirection($this->raw(), 0, $direction->x, $direction->y, $direction->z);
+    }
+
+    public const function listenerDirection() : Vec3
+    {
+        Vec3 $p = Vec3();
+        cListenerDirection($this->raw(), 0, &$p);
+        return $p;
+    }
+
+    public function setListenerWorldUp(Vec3 $up) : void
+    {
+        cListenerSetWorldUp($this->raw(), 0, $up->x, $up->y, $up->z);
+    }
+
+    public const function listenerWorldUp() : Vec3
+    {
+        Vec3 $p = Vec3();
+        cListenerWorldUp($this->raw(), 0, &$p);
+        return $p;
+    }
+
+    /**
+     * Pull interleaved f32 frames out of the graph. The path you use
+     * when there is no device.
+     */
+    public function read(uint64 $frameCount) : result<array<float32>, Error>
+    {
+        if ($frameCount == 0) {
+            return .ok(array<float32>());
+        }
+
+        uint32 $ch = $this->channels();
+        if ($ch == 0) {
+            return .error(.invalidOperation);
+        }
+
+        uint64 $ch64 = $ch as uint64;
+        if ($frameCount > math::MAX_UINT64 / $ch64) {
+            return .error(.tooBig);
+        }
+
+        uint64 $samples = $frameCount * $ch64;
+        if ($samples > (math::MAX_USIZE as uint64)) {
+            return .error(.tooBig);
+        }
+
+        usize $n = $samples as usize;
+        array<float32> $out = arr::room<float32>($n);
+        ptr<float32> $p = $out->spare();
+        if ($p:$ == null) {
+            return .error(.outOfMemory);
+        }
+
+        uint64 $got = 0;
+        int32 $code = cEngineRead($this->raw(), $p, $frameCount, &$got);
+
+        if ($code != 0 && $code != AT_END) {
+            return .error(Error::from($code));
+        }
+
+        if ($got > $frameCount) {
+            $got = $frameCount;
+        }
+
+        $out->commit(($got * $ch64) as usize);
+        return .ok($out);
+    }
+}
