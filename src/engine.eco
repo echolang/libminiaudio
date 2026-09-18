@@ -100,6 +100,20 @@ public class Engine
     }
 
     /**
+     * Encoded wav / flac / mp3 already in memory. Same `Sound` as a file.
+     * The string need not outlive the Sound. `$decode` still applies.
+     * `$stream` does nothing.
+     */
+    public function sound(
+        memory: const string& $bytes,
+        SoundOptions $options = SoundOptions(),
+        group: SoundGroup? $group = null
+    ) : result<Sound, Error>
+    {
+        return Sound::open($this, memory: $bytes, $options, $group);
+    }
+
+    /**
      * A looping oscillator in the graph. Same `Sound` as a file:
      * start, volume, pan, fade. Frequency is Hz.
      */

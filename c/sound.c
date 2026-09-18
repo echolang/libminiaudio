@@ -1,6 +1,33 @@
 #include "internal.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/*
+ * Unique per copy. The resource manager keys on the hash of this name,
+ * not the pointer, so the stack buffer need not outlive the sound.
+ */
+static void memory_name(const void *p, char *buf, size_t n)
+{
+    snprintf(buf, n, "eco-mem:%p", p);
+}
+
+static void memory_release(ma_resource_manager *rm, void *encoded)
+{
+    char name[64];
+
+    if (encoded == NULL) {
+        return;
+    }
+
+    if (rm != NULL) {
+        memory_name(encoded, name, sizeof(name));
+        ma_resource_manager_unregister_data(rm, name);
+    }
+
+    free(encoded);
+}
 
 static uint32_t sound_flags(
     uint32_t stream,
@@ -162,16 +189,104 @@ int32_t eco_ma_sound_init_from_waveform(
     return MA_SUCCESS;
 }
 
+int32_t eco_ma_sound_init_from_memory(
+    eco_ma_engine *engine,
+    const void *data,
+    size_t size,
+    uint32_t stream,
+    uint32_t decode,
+    uint32_t looping,
+    uint32_t no_pitch,
+    uint32_t no_spatialization,
+    eco_ma_sound_group *group,
+    eco_ma_sound **out
+)
+{
+    eco_ma_sound *sound;
+    ma_engine *inner;
+    ma_resource_manager *rm;
+    ma_result result;
+    char name[64];
+    uint32_t flags;
+
+    (void)stream; /* no disk; STREAM on a registered blob does not make sense */
+
+    if (engine == NULL || data == NULL || out == NULL) {
+        return MA_INVALID_ARGS;
+    }
+
+    *out = NULL;
+
+    if (size == 0) {
+        return MA_INVALID_ARGS;
+    }
+
+    inner = as_engine(engine);
+    rm = ma_engine_get_resource_manager(inner);
+    if (rm == NULL) {
+        return MA_INVALID_OPERATION;
+    }
+
+    sound = (eco_ma_sound *)calloc(1, sizeof(*sound));
+    if (sound == NULL) {
+        return MA_OUT_OF_MEMORY;
+    }
+
+    sound->encoded = malloc(size);
+    if (sound->encoded == NULL) {
+        free(sound);
+        return MA_OUT_OF_MEMORY;
+    }
+    memcpy(sound->encoded, data, size);
+
+    memory_name(sound->encoded, name, sizeof(name));
+    result = ma_resource_manager_register_encoded_data(rm, name, sound->encoded, size);
+    if (result != MA_SUCCESS) {
+        free(sound->encoded);
+        free(sound);
+        return result;
+    }
+
+    flags = sound_flags(0, decode, looping, no_pitch, no_spatialization);
+    result = ma_sound_init_from_file(
+        inner,
+        name,
+        flags,
+        as_group(group),
+        NULL,
+        &sound->sound
+    );
+    if (result != MA_SUCCESS) {
+        memory_release(rm, sound->encoded);
+        free(sound);
+        return result;
+    }
+
+    *out = sound;
+    return MA_SUCCESS;
+}
+
 void eco_ma_sound_uninit(eco_ma_sound *sound)
 {
+    ma_resource_manager *rm = NULL;
+
     if (sound == NULL) {
         return;
+    }
+
+    if (sound->encoded != NULL) {
+        ma_engine *eng = ma_sound_get_engine(&sound->sound);
+
+        if (eng != NULL) {
+            rm = ma_engine_get_resource_manager(eng);
+        }
     }
 
     ma_sound_uninit(&sound->sound);
     if (sound->flags & ECO_SOUND_WAVEFORM) {
         ma_waveform_uninit(&sound->wave);
     }
+    memory_release(rm, sound->encoded);
     free(sound);
 }
 

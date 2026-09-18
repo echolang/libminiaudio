@@ -66,6 +66,18 @@ int32_t eco_ma_sound_init_from_waveform(
     eco_ma_sound_group *group,
     eco_ma_sound **out
 );
+int32_t eco_ma_sound_init_from_memory(
+    eco_ma_engine *engine,
+    const void *data,
+    size_t size,
+    uint32_t stream,
+    uint32_t decode,
+    uint32_t looping,
+    uint32_t no_pitch,
+    uint32_t no_spatialization,
+    eco_ma_sound_group *group,
+    eco_ma_sound **out
+);
 void    eco_ma_sound_uninit(eco_ma_sound *sound);
 void    eco_ma_sound_get_position(eco_ma_sound *sound, eco_ma_vec3 *out);
 int32_t eco_ma_sound_set_frequency(eco_ma_sound *sound, double frequency);

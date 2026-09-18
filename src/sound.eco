@@ -1,5 +1,5 @@
 /**
- * One instance of a playing (or stopped) sound: a file, or a tone.
+ * One instance of a playing (or stopped) sound: a file, encoded bytes, or a tone.
  * Holds the Engine it was created from, and the group if it has one,
  * so neither can die first. Stop does not rewind; `seek(0)` does.
  */
@@ -44,6 +44,47 @@ public class Sound
         int32 $code = cSoundInit(
             $engine->raw(),
             $path->cstr(),
+            $options->stream,
+            $options->decode,
+            $options->looping,
+            $options->noPitch,
+            $options->noSpatialization,
+            $group?->raw() ?? null,
+            &$raw
+        );
+        ptr<eco_ma_sound> $p = guard takeRaw($code, $raw) else ($e) {
+            return .error($e);
+        }
+
+        return .ok(Sound($engine, $group, $p));
+    }
+
+    /**
+     * Encoded wav / flac / mp3 in `$bytes`. The C layer copies; the string
+     * need not outlive the Sound. `$decode` pre-decodes. `$stream` does
+     * nothing: there is no disk.
+     */
+    internal static function open(
+        Engine $engine,
+        memory: const string& $bytes,
+        SoundOptions $options,
+        SoundGroup? $group
+    ) : result<Sound, Error>
+    {
+        if ($bytes->empty()) {
+            return .error(.invalidArgs);
+        }
+
+        ptr<const uint8> $data = $bytes->data();
+        if ($data:$ == null) {
+            return .error(.invalidArgs);
+        }
+
+        ptr<eco_ma_sound> $raw = null;
+        int32 $code = cSoundInitMemory(
+            $engine->raw(),
+            $data,
+            $bytes->size(),
             $options->stream,
             $options->decode,
             $options->looping,
@@ -195,7 +236,7 @@ public class Sound
     }
 
     /**
-     * Hz. Tones only; a file sound is `invalidOperation`.
+     * Hz. Tones only. A file or encoded-bytes sound is `invalidOperation`.
      */
     public function setFrequency(float64 $hz) : status<Error>
     {

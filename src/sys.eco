@@ -61,6 +61,18 @@ extern {
         ptr<eco_ma_sound_group> $group,
         ptr<ptr<eco_ma_sound>> $out
     ) : int32;
+    function eco_ma_sound_init_from_memory as cSoundInitMemory(
+        ptr<eco_ma_engine> $engine,
+        ptr<const uint8> $data,
+        usize $size,
+        uint32 $stream,
+        uint32 $decode,
+        uint32 $looping,
+        uint32 $noPitch,
+        uint32 $noSpatialization,
+        ptr<eco_ma_sound_group> $group,
+        ptr<ptr<eco_ma_sound>> $out
+    ) : int32;
     function eco_ma_sound_uninit as cSoundUninit(ptr<eco_ma_sound> $sound) : void;
     function eco_ma_sound_get_position as cSoundPosition(ptr<eco_ma_sound> $sound, ptr<Vec3> $out) : void;
     function eco_ma_sound_set_frequency as cSoundSetFrequency(ptr<eco_ma_sound> $sound, float64 $hz) : int32;

@@ -13,18 +13,31 @@
 #[cc: include "third_party/miniaudio"]
 #[cc: include "c"]
 #[cc: sources [
-    "third_party/miniaudio/miniaudio.c",
     "c/engine.c",
     "c/sound.c",
     "c/group.c",
     "c/pcm.c"
 ]]
 
-#[if: os == darwin]
+// iOS Core Audio is Objective-C (AVAudioSession). echoc appends
+// #[cc: flag] after the source, so -x objective-c would not apply;
+// a .m unit is the language. never compile both TUs.
+#[if: os == ios]
+#[cc: sources "c/miniaudio.m"]
+#[else]
+#[cc: sources "third_party/miniaudio/miniaudio.c"]
+#[end]
+
+#[if: family == darwin]
 #[cc: define { MA_NO_RUNTIME_LINKING: 1 }]
 #[link: framework "CoreFoundation"]
-#[link: framework "CoreAudio"]
 #[link: framework "AudioToolbox"]
+#[end]
+#[if: os == darwin]
+#[link: framework "CoreAudio"]
+#[elif: os == ios]
+#[link: framework "AVFoundation"]
+#[link: framework "Foundation"]
 #[elif: os == linux]
 #[link: lib { name: "m", runtime: process }]
 #[link: lib { name: "dl", runtime: process }]

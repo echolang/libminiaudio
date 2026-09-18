@@ -2,7 +2,7 @@
 
 Echo does not come with a speaker. libminiaudio is the high-level miniaudio engine, vendored and compiled into your module, so `epm add` is the whole install.
 
-If you know `ma_engine_init` and `ma_sound_start`, you know `ma::Engine::create` and `$sound->start()`. miniaudio's own docs still own the ideas: frames versus samples, spatialization, streaming. The catch is the boundary. Echo never sees a miniaudio struct. Everything with identity is a heap pointer behind `ma::Engine`, `ma::Sound`, `ma::SoundGroup`, and `ma::PcmStream`. A `Sound` is a file or a tone.
+If you know `ma_engine_init` and `ma_sound_start`, you know `ma::Engine::create` and `$sound->start()`. miniaudio's own docs still own the ideas: frames versus samples, spatialization, streaming. The catch is the boundary. Echo never sees a miniaudio struct. Everything with identity is a heap pointer behind `ma::Engine`, `ma::Sound`, `ma::SoundGroup`, and `ma::PcmStream`. A `Sound` is a file, encoded bytes, or a tone.
 
 ## Install
 
@@ -14,7 +14,7 @@ epm add echolang/libminiaudio --git https://github.com/echolang/libminiaudio --r
 
 That writes a `#[requires:]` line and vendors the sources. Echo sees the `ma` namespace as soon as the module loads.
 
-The module builds on Darwin, Linux, and Windows. On Darwin it links CoreAudio. On Linux it needs `-ldl -lpthread -lm`, which travel with the module. There is no system miniaudio to install.
+The module builds on Darwin, iOS, Linux, and Windows. On Darwin it links CoreAudio. On iOS the implementation is compiled as Objective-C (AVAudioSession) and the engine opens a Playback session: no microphone permission. On Linux it needs `-ldl -lpthread -lm`, which travel with the module. There is no system miniaudio to install.
 
 ## Play a file
 
@@ -85,6 +85,24 @@ You cannot pause it, seek it, or change its volume afterwards. Reach for `sound`
 
 `play` has no group argument. A fire-and-forget sound would outlive an Echo group handle. Attach with `sound(..., group:)` instead.
 
+### Encoded bytes already in memory
+
+A packed asset, a download, `io::readfile`. Same `Sound` as a path. The C layer copies, so the string can die.
+
+```echo
+use std::io;
+
+string $bytes = guard io::readfile('assets/shot.wav') else ($e) {
+    die("{$e->message()}");
+}
+
+ma::Sound $shot = guard $engine->sound(memory: $bytes) else ($e) {
+    die("load: {$e}");
+}
+```
+
+`$decode` still pre-decodes. `$stream` does nothing: there is no disk. Empty bytes are `invalidArgs`.
+
 ## Play a tone
 
 A file is someone else's samples. A tone is a looping oscillator the engine generates: sine, square, triangle, saw. You get a `Sound` back. Same start, volume, pan, fade. Frequency is Hz.
@@ -107,7 +125,7 @@ $a->setFade(1.0f, 0.0f, 16800); // ~350 ms at 48 kHz
 
 `setFade` is a multiplier on volume, not a replacement for it. Fade from 0 to 1 to bring a note in; pass `-1` as the start to mean "whatever it is right now." If volume is 0, fading does not make a sound.
 
-`setFrequency`, `setWaveform`, and `setAmplitude` are for tones. Call them on a file and you get `invalidOperation`. Amplitude is the generator's gain, not the sound's volume. Default is 1.0. `hz <= 0` is `invalidArgs`.
+`setFrequency`, `setWaveform`, and `setAmplitude` are for tones. Call them on a file or encoded bytes and you get `invalidOperation`. Amplitude is the generator's gain, not the sound's volume. Default is 1.0. `hz <= 0` is `invalidArgs`.
 
 `stream` and `decode` on `SoundOptions` do nothing here: there is no file. The shim loops. `noPitch`, `noSpatialization`, and `group` still apply.
 
@@ -128,7 +146,7 @@ guard $music->start() else ($e) {
 }
 ```
 
-`$decode` pre-decodes into memory so the audio thread does less work. `$noPitch` and `$noSpatialization` are optimizations when you know you will not use those features. Async loading is not here: miniaudio's async flag needs a fence, and this library does not wrap fences.
+`$decode` pre-decodes into memory so the audio thread does less work. That still applies when the bytes are already in memory. `$stream` is a file thing: encoded bytes have nowhere to stream from, so it is ignored there. `$noPitch` and `$noSpatialization` are optimizations when you know you will not use those features. Async loading is not here: miniaudio's async flag needs a fence, and this library does not wrap fences.
 
 There are no `MA_SOUND_FLAG_*` integers on the public surface. A new option is a new field with a default of `false`. Existing call sites keep compiling.
 
@@ -246,7 +264,7 @@ guard $out->write($frames) else ($e) {
 
 `pcm()` defaults to 4096 frames, about 85 ms at 48 kHz. `write` returns how many frames actually landed. Short writes are normal when the ring is wrapping or nearly full. Length must be a multiple of `channels()`.
 
-`PcmStream` is not a `Sound`. A `Sound` is a file or a tone. This type is the pipe, plus `start` / `stop` / `volume` / `pan`. Spatialization is off. Frequency is whatever you put in the buffer.
+`PcmStream` is not a `Sound`. A `Sound` is a file, encoded bytes, or a tone. This type is the pipe, plus `start` / `stop` / `volume` / `pan`. Spatialization is off. Frequency is whatever you put in the buffer.
 
 `examples/synth` is a keyboard on thirteen tones. Hold a key to sustain. Release starts a 350 ms fade (`setFade` on the `Sound`). Terminals that report key-up (Kitty, Ghostty, WezTerm, iTerm2, Windows) gate the note on the real key. The rest fade shortly after the last character.
 
@@ -317,7 +335,7 @@ Queries have no `get` prefix: `volume()`, `sampleRate()`, `isPlaying()`.
 
 This is the high-level engine. I am not wrapping the rest of miniaudio "just in case." Device callbacks, capture, the node graph, arbitrary data-source vtables, async load fences, and the vorbis/opus extras are not here. Tones are, because a sine should not require a WAV file. A push PCM ring is, because that is the hole you need to generate audio from Echo. Echo never runs in the mixer. You write from your thread.
 
-A new getter or setter is an `extern` alias of the miniaudio function, not another C wrapper. Init, uninit, option packing, the PCM ring, and the waveform box on a tone are the exceptions: Echo cannot say those types.
+A new getter or setter is an `extern` alias of the miniaudio function, not another C wrapper. Init, uninit, option packing, the PCM ring, the waveform box on a tone, and in-memory encoded bytes are the exceptions: Echo cannot say those types.
 
 miniaudio itself has no ABI stability, even between patch releases. Echo never sees a miniaudio struct. That is the point of the shim. The copy in `third_party/miniaudio` is 0.11.22.
 
