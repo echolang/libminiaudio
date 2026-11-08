@@ -17,7 +17,7 @@ test load_sine
 test load_sine_from_memory
 {
     ma::Engine $engine = offlineEngine();
-    string $bytes = guard io::readfile(sinePath()) else ($e) {
+    string $bytes = guard std::fs::readfile(sinePath()) else ($e) {
         die("{$e->message()}");
     }
     ma::Sound $fromFile = guard $engine->sound(sinePath()) else ($e) {
@@ -59,7 +59,7 @@ test memory_garbage_fails
 test memory_decode_option
 {
     ma::Engine $engine = offlineEngine();
-    string $bytes = guard io::readfile(sinePath()) else ($e) {
+    string $bytes = guard std::fs::readfile(sinePath()) else ($e) {
         die("{$e->message()}");
     }
     ma::Sound $fromFile = guard $engine->sound(sinePath(), ma::SoundOptions($decode: true)) else ($e) {
@@ -82,7 +82,7 @@ test memory_decode_option
 test memory_stream_is_ignored
 {
     ma::Engine $engine = offlineEngine();
-    string $bytes = guard io::readfile(sinePath()) else ($e) {
+    string $bytes = guard std::fs::readfile(sinePath()) else ($e) {
         die("{$e->message()}");
     }
     ma::Sound $sound = guard $engine->sound(memory: $bytes, ma::SoundOptions($stream: true)) else ($e) {
@@ -98,7 +98,7 @@ test memory_stream_is_ignored
 test memory_start_and_read
 {
     ma::Engine $engine = offlineEngine();
-    string $bytes = guard io::readfile(sinePath()) else ($e) {
+    string $bytes = guard std::fs::readfile(sinePath()) else ($e) {
         die("{$e->message()}");
     }
     ma::Sound $sound = guard $engine->sound(memory: $bytes) else ($e) {
